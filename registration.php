@@ -6,6 +6,6 @@ use Magento\Framework\Component\ComponentRegistrar;
 
 ComponentRegistrar::register(
     ComponentRegistrar::MODULE,
-    'Realdeals_PdfReader',
+    'Kvadro_PdfReader',
     __DIR__
 );

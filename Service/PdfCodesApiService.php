@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Service;
+namespace Kvadro\PdfReader\Service;
 
-use Model\Config;
+use Kvadro\PdfReader\Model\Config;
 use Psr\Log\LoggerInterface;
 
 class PdfCodesApiService

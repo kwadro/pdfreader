@@ -1,6 +1,8 @@
 <?php
 
-namespace Model;
+declare(strict_types=1);
+
+namespace Kvadro\PdfReader\Model;
 
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Framework\Encryption\EncryptorInterface;
