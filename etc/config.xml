@@ -5,6 +5,7 @@
         <kvadro_pdfreader>
             <general>
                 <enabled>1</enabled>
+                <reader_api_base_url>https://pdf.kvadro.if.ua</reader_api_base_url>
             </general>
         </kvadro_pdfreader>
     </default>

@@ -2,11 +2,14 @@
 <config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:noNamespaceSchemaLocation="urn:magento:module:Magento_Config:etc/system_file.xsd">
     <system>
+        <tab id="kvadro_pdfreader" translate="label" sortOrder="810">
+            <label>PDF Reader</label>
+        </tab>
         <section id="kvadro_pdfreader" translate="label" sortOrder="96" showInDefault="1" showInWebsite="0"
                  showInStore="0">
             <label>PDF Reader</label>
-            <tab>insign</tab>
-            <resource>Insign_PostCore::swisspost_config</resource>
+            <tab>kvadro_pdfreader</tab>
+            <resource>Kvadro_PdfReader::config</resource>
             <group id="general" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="0"
                    showInStore="0">
                 <label>General</label>
