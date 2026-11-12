@@ -4,25 +4,52 @@ declare(strict_types=1);
 
 namespace Kvadro\PdfReader\Service;
 
+use CURLFile;
+use Exception;
 use Kvadro\PdfReader\Model\Config;
+use Magento\Framework\Exception\FileSystemException;
+use Magento\Framework\Filesystem\Driver\File as FileDriver;
+use Magento\Framework\Filesystem\Io\File as IoFile;
+use Magento\Framework\HTTP\Client\CurlFactory;
 use Psr\Log\LoggerInterface;
 
 class PdfCodesApiService
 {
-    private Config $config;
-    private LoggerInterface $logger;
+    private const REQUEST_TIMEOUT = 120;
 
+    /**
+     * @param Config $config
+     * @param LoggerInterface $logger
+     * @param CurlFactory $curlFactory
+     * @param FileDriver $fileDriver
+     * @param IoFile $ioFile
+     */
     public function __construct(
-        Config $config,
-        LoggerInterface $logger
+        private readonly Config $config,
+        private readonly LoggerInterface $logger,
+        private readonly CurlFactory $curlFactory,
+        private readonly FileDriver $fileDriver,
+        private readonly IoFile $ioFile
     ) {
-        $this->config = $config;
-        $this->logger = $logger;
     }
 
-    public function validate($path, $baseUrl, $token): bool
+    /**
+     * Validate that the file is readable and API credentials are configured.
+     *
+     * @param string $path
+     * @param string $baseUrl
+     * @param string $token
+     * @return bool
+     */
+    public function validate(string $path, string $baseUrl, string $token): bool
     {
-        if (!is_readable($path)) {
+        try {
+            $isReadable = $this->fileDriver->isReadable($path);
+        } catch (FileSystemException) {
+            $isReadable = false;
+        }
+
+        if (!$isReadable) {
             $this->logger->info('Bar Codes API: pdf file not readable', ['path' => $path]);
             return false;
         }
@@ -30,34 +57,50 @@ class PdfCodesApiService
             $this->logger->info('Bar Codes API: base URL or bearer token is not configured');
             return false;
         }
+
         return true;
     }
-    private function apiRequest($path, $apiUrl, $token): array
+
+    /**
+     * Upload a file to the PDF Reader API and return response body, HTTP status and error message.
+     *
+     * @param string $path
+     * @param string $apiUrl
+     * @param string $token
+     * @return array{0: string|false, 1: int, 2: string}
+     */
+    private function apiRequest(string $path, string $apiUrl, string $token): array
     {
         $mime = $this->guessMimeType($path);
-        $curl = curl_init();
-        curl_setopt_array($curl, [
-            CURLOPT_URL => $apiUrl,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_ENCODING => '',
-            CURLOPT_MAXREDIRS => 10,
-            CURLOPT_TIMEOUT => 120,
+        $pathInfo = $this->ioFile->getPathInfo($path);
+        $fileName = (string)($pathInfo['basename'] ?? 'upload');
+
+        $curl = $this->curlFactory->create();
+        $curl->setTimeout(self::REQUEST_TIMEOUT);
+        $curl->addHeader('Authorization', 'Bearer ' . $token);
+        $curl->setOptions([
             CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
-            CURLOPT_CUSTOMREQUEST => 'POST',
+            CURLOPT_MAXREDIRS => 10,
             CURLOPT_POSTFIELDS => [
-                'file' => new \CURLFile($path, $mime, basename($path)),
-            ],
-            CURLOPT_HTTPHEADER => [
-                'Authorization: Bearer ' . $token
+                'file' => new CURLFile($path, $mime, $fileName),
             ],
         ]);
-        $response = curl_exec($curl);
-        $curlError = curl_error($curl);
-        $httpCode = (int)curl_getinfo($curl, CURLINFO_HTTP_CODE);
-        curl_close($curl);
-        return [$response, $httpCode, $curlError];
+
+        try {
+            $curl->post($apiUrl, []);
+        } catch (Exception $exception) {
+            return [false, 0, $exception->getMessage()];
+        }
+
+        return [$curl->getBody(), (int)$curl->getStatus(), ''];
     }
+
+    /**
+     * Split a PDF via the remote API and return the response payload.
+     *
+     * @param string $path
+     * @return array<string, mixed>|null
+     */
     public function loadZipByPdf(string $path): ?array
     {
         $token = $this->config->getReaderPdfApiBearerToken();
@@ -66,23 +109,30 @@ class PdfCodesApiService
         if (!$this->validate($path, $baseUrl, $token)) {
             return null;
         }
+
         $apiUrl = $baseUrl . 'api/pdf/split';
-        list($response, $httpCode, $curlError) = $this->apiRequest($path, $apiUrl, $token);
+        [$response, $httpCode, $curlError] = $this->apiRequest($path, $apiUrl, $token);
         if ($response === false || $httpCode !== 200) {
             $this->logger->info('loadZipByPdf API curl error: ' . $curlError, ['path' => $path]);
             return null;
         }
+
         $results = json_decode($response, true);
-        if (!is_array($results) || empty($results['download_url']) ) {
+        if (!is_array($results) || empty($results['download_url'])) {
             return null;
         }
+
         return $results;
     }
 
     /**
+     * Read barcode / QR codes from a PDF or image file via the remote API.
+     *
+     * @param string $path
+     * @param string $type
      * @return string[]|null
      */
-    public function loadCodesFromFile(string $path, $type = 'image'): ?array
+    public function loadCodesFromFile(string $path, string $type = 'image'): ?array
     {
         $token = $this->config->getReaderPdfApiBearerToken();
         $baseUrl = $this->config->getReaderPdfApiBaseUrl();
@@ -91,9 +141,8 @@ class PdfCodesApiService
             return null;
         }
 
-        $apiUrl = $baseUrl . 'api/'.$type.'/codes';
-
-        list($response, $httpCode, $curlError) = $this->apiRequest($path, $apiUrl, $token);
+        $apiUrl = $baseUrl . 'api/' . $type . '/codes';
+        [$response, $httpCode, $curlError] = $this->apiRequest($path, $apiUrl, $token);
 
         if ($response === false) {
             $this->logger->info('Bar Codes API curl error: ' . $curlError, ['path' => $path]);
@@ -110,9 +159,17 @@ class PdfCodesApiService
         return $codes;
     }
 
+    /**
+     * Guess MIME type from the file extension.
+     *
+     * @param string $path
+     * @return string
+     */
     private function guessMimeType(string $path): string
     {
-        $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $pathInfo = $this->ioFile->getPathInfo($path);
+        $extension = strtolower((string)($pathInfo['extension'] ?? ''));
+
         return match ($extension) {
             'pdf' => 'application/pdf',
             'png' => 'image/png',
@@ -122,12 +179,16 @@ class PdfCodesApiService
     }
 
     /**
+     * Parse barcode codes from an API JSON response.
+     *
+     * @param string $response
      * @return string[]|null
      */
     private function parseResponse(string $response): ?array
     {
         $results = json_decode($response, true);
-        $this->logger->info('Bar Codes API result', $results);
+
+        $this->logger->info('Bar Codes API result', is_array($results) ? $results : []);
         if (!is_array($results) || empty($results['codes']) || !is_array($results['codes'])) {
             return null;
         }
@@ -136,7 +197,7 @@ class PdfCodesApiService
 
         foreach ($results['codes'] as $code) {
             $codeType = $code['type'] ?? '';
-            if (!empty($code['data']) && in_array($codeType, ['I2/5', 'CODE-128','QR-Code'])) {
+            if (!empty($code['data']) && in_array($codeType, ['I2/5', 'CODE-128', 'QR-Code'], true)) {
                 $codes[] = (string)$code['data'];
             }
         }

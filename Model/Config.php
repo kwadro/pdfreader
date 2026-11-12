@@ -10,28 +10,29 @@ use Magento\Store\Model\ScopeInterface;
 
 class Config
 {
-    const PDF_LOADER_ENABLED = 'kvadro_pdfreader/general/enabled';
-    const PDF_LOADER_API_BASE_URL_PATH = 'kvadro_pdfreader/general/reader_api_base_url';
-    const PDF_LOADER_API_BEARER_TOKEN_PATH = 'kvadro_pdfreader/general/reader_api_bearer_token';
+    public const PDF_LOADER_ENABLED = 'kvadro_pdfreader/general/enabled';
+    public const PDF_LOADER_API_BASE_URL_PATH = 'kvadro_pdfreader/general/reader_api_base_url';
+    public const PDF_LOADER_API_BEARER_TOKEN_PATH = 'kvadro_pdfreader/general/reader_api_bearer_token';
 
-    private ScopeConfigInterface $scopeConfig;
-    private EncryptorInterface $encryptor;
-
+    /**
+     * @param ScopeConfigInterface $scopeConfig
+     * @param EncryptorInterface $encryptor
+     */
     public function __construct(
-        ScopeConfigInterface $scopeConfig,
-        EncryptorInterface $encryptor
+        private readonly ScopeConfigInterface $scopeConfig,
+        private readonly EncryptorInterface $encryptor
     ) {
-        $this->scopeConfig = $scopeConfig;
-        $this->encryptor = $encryptor;
     }
 
     /**
-     * @param $storeId
+     * Check whether PDF Reader is enabled for the given store.
+     *
+     * @param int|null $storeId
      * @return bool
      */
-    public function isEnable($storeId = null): bool
+    public function isEnable(?int $storeId = null): bool
     {
-        return (bool)$this->scopeConfig->getValue(
+        return $this->scopeConfig->isSetFlag(
             self::PDF_LOADER_ENABLED,
             ScopeInterface::SCOPE_STORE,
             $storeId
@@ -39,10 +40,12 @@ class Config
     }
 
     /**
-     * @param $storeId
+     * Return the PDF Reader API base URL with a trailing slash.
+     *
+     * @param int|null $storeId
      * @return string
      */
-    public function getReaderPdfApiBaseUrl($storeId = null): string
+    public function getReaderPdfApiBaseUrl(?int $storeId = null): string
     {
         $url = (string)$this->scopeConfig->getValue(
             self::PDF_LOADER_API_BASE_URL_PATH,
@@ -54,10 +57,12 @@ class Config
     }
 
     /**
-     * @param $storeId
+     * Return the decrypted PDF Reader API bearer token.
+     *
+     * @param int|null $storeId
      * @return string
      */
-    public function getReaderPdfApiBearerToken($storeId = null): string
+    public function getReaderPdfApiBearerToken(?int $storeId = null): string
     {
         $value = $this->scopeConfig->getValue(
             self::PDF_LOADER_API_BEARER_TOKEN_PATH,
@@ -65,11 +70,11 @@ class Config
             $storeId
         );
 
-        return $this->decryptConfigValue($value);
+        return $this->decryptConfigValue(is_string($value) ? $value : null);
     }
 
     /**
-     * Values saved with Magento\Config\Model\Config\Backend\Encrypted are stored ciphertext in core_config_data.
+     * Values saved with Magento\Config\Model\Config\Backend\Encrypted are stored as ciphertext.
      *
      * @param string|null $value
      * @return string
@@ -79,6 +84,7 @@ class Config
         if ($value === null || $value === '') {
             return '';
         }
+
         $decrypted = $this->encryptor->decrypt($value);
 
         return $decrypted !== '' ? $decrypted : $value;
