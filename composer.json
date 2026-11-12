@@ -5,8 +5,7 @@
   "license": "proprietary",
   "require": {
     "php": "^8.2",
-    "magento/framework": "^103.0",
-    "kvadro/pdfloader": "^1.0"
+    "magento/framework": "^103.0"
   },
   "autoload": {
     "files": [
